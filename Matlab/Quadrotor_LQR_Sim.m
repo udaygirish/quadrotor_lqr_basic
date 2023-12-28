@@ -13,8 +13,8 @@ global out_of_airspace;
 %% Define Simulation Parameters
 global num_points;
 global total_sim_time;
-num_points = 1400;
-total_sim_time = 12;
+num_points = 500;
+total_sim_time = 10;
 
 %% Define system parameters
 g = 9.81;   % gravitational acceleration [m/s^2]
@@ -50,7 +50,7 @@ A_hover =  [0, 0, 0,            0,           0,    0, 1, 0, 0, 0, 0, 0
             0, 0, 0,            0,           0,    0, 0, 1, 0, 0, 0, 0;
             0, 0, 0,            0,           0,    0, 0, 0, 1, 0, 0, 0;
             0, 0, 0,            0,           0,    0, 0, 0, 0, 1, 0, 0;
-            0, 0, 0,           0,           0,    0, 0, 0, 0, 0, 1, 0;
+            0, 0, 0,            0,           0,    0, 0, 0, 0, 0, 1, 0;
             0, 0, 0,            0,           0,    0, 0, 0, 0, 0, 0, 1;
             0, 0, 0,            0,           g,    0, 0, 0, 0, 0, 0, 0;
             0, 0, 0,           -g,           0,    0, 0, 0, 0, 0, 0, 0;
@@ -80,34 +80,26 @@ disp(ControllabilityRank)
 
 %% Use A Hover ? Commented - Non Linear Dynamics in Use
 % If needed can use Linear Dynamics which A_hover, B_hover
-% A = A_hover;
-% B = B_hover;
+A = A_hover;
+%B = B_hover;
 
 %% LQR Gain Calculation for Initial Linearization
 
 % Solve the continuous-time algebraic Riccati equation for LQR gains
-Q = diag([5000,5000, 500, 10, 10, 100, 100, 100, 50, 10000, 10000, 1000]);
+Q = diag([1000,1000, 1000, 100, 100, 100, 100, 100, 100, 10000, 10000, 10000]);
 R1 = eye(4)*0.001 ;
 N = 0;
 K = lqr(A, B, Q, R1);
 
 
-%% LQR with integrator  - Integral LQR
-A_aug = [A, zeros(size(A,1),1);zeros(1,size(A,2)), 0];
-B_aug = [B; zeros(1, size(B,2))];
-
-Q_aug = blkdiag(Q,1);
-% disp(size(A_aug));
-% disp(size(B_aug));
-% disp(size(Q_aug));
-% [P,~,~] = care(A_aug, B_aug, Q_aug, R1);
-% K_ilqr = -inv(R1) * B_aug' * P(1:end-1,:);
+%% LQR with integrator 
+A_aug = [A, zeros(size(A));];
 
 
 %% Defintion of Variables
 
-uav_entrypoint = [1;-1;8];
-uav_exitpoint = [-2;2;5];
+uav_entrypoint = [1;-1;3];
+uav_exitpoint = [-5;5;8];
 
 n_disturb = [0.5, 0.5, 0.5].';
 r_disturb = [1, 1, 1].';
@@ -130,8 +122,8 @@ nest_state = [nest_position; nest_orientation; zeros(6, 1)];
 t_span = linspace(0, total_sim_time, num_points);
 
 
-helix_radius = 1;
-helix_pitch = 0.5;
+helix_radius = 0.3;
+helix_pitch = 0.1;
 
 %% TEST DRone Yet to Complete
 
@@ -145,11 +137,11 @@ helix_pitch = 0.5;
 %% Random UAV Trajectory
 
 % Generate random UAV trajectory
- uav_trajectory = generate_random_trajectory_with_spline(uav_entrypoint, uav_exitpoint, total_sim_time, num_points);
+uav_trajectory = generate_random_trajectory_with_spline(uav_entrypoint, uav_exitpoint, total_sim_time, num_points)
 % Helical
-% uav_trajectory = generate_helical_trajectory(uav_entrypoint, uav_exitpoint, total_sim_time, num_points, helix_radius, helix_pitch);
+%uav_trajectory = generate_helical_trajectory(uav_entrypoint, uav_exitpoint, total_sim_time, num_points, helix_radius, helix_pitch);
 % Helical with Circle
-% uav_trajectory = generate_helix_trajectory([1,1,1], total_sim_time, num_points, helix_radius, helix_pitch);
+%uav_trajectory = generate_helix_trajectory([1,1,1], total_sim_time, num_points, helix_radius, helix_pitch);
 
 %% Control Loop Iteration
 
@@ -186,37 +178,32 @@ for k = 2: length(t_span)
         disp(curr_drone_position);
         z_new = update_states(curr_drone_position, K, mu, p, I, r, n, uav_position, kspan);
         z_total = [z_total,z_new];
-        time_catch = k;
+        time_catch = k
     end
 
     if catched_uav == true || out_of_airspace == true
         if temp_disturb_init < 2
-            new_uav_trajectory = generate_random_trajectory_with_spline(curr_drone_position(1:3), nest_position, (num_points-2*k)*total_sim_time*2/(num_points), num_points-k);
+            new_uav_trajectory = generate_random_trajectory_with_spline(uav_position.', nest_position, 3, num_points-k);
+        end
+        if temp_disturb_init < 2
             [A, B] = linearize_quadrotor(p, mu, I, n_disturb, r_disturb);
-            Q = diag([5000,5000, 500, 10, 10, 100, 100, 100, 50, 10000, 10000, 1000]);
+            Q = diag([1000,1000, 1000, 100, 100, 100, 100, 100, 100, 10000, 10000, 10000]);
             R1 = eye(4)*0.01 ;
             K_new = lqr(A, B, Q, R1);
-        end            
+        end
         disp(size(z_total)); 
         kspan = linspace(t_span(k-1), t_span(k), 50);
         
-        uav_position = new_uav_trajectory(k+1-time_catch,:);
+        uav_position = new_uav_trajectory(k,:);
         uav_position = uav_position(2:4);
         disp("Current UAV Position")
         disp(uav_position);
         disp("Current Drone Position")
         disp("======================================")
         disp("GOING TOWARDS NEST POSITION")
-        if out_of_airspace == true
-            disp("OUT OF AIRSPACE")
-            curr_drone_position = z_total(:,end-20);
-        else
-            curr_drone_position = z_total(:,end-2);
-        end
-        
+        curr_drone_position = z_total(:,end);
         disp(curr_drone_position);
-        z_return = update_states(curr_drone_position, K_new, mu, p, I, r, n, uav_position, kspan);
-        new_uav_trajectory(k+1-time_catch,2:4) = z_return(1:3);
+        z_return = update_states(curr_drone_position, K, mu, p, I, r, n, uav_position, kspan);
         z_total = [z_total,z_return];
         temp_disturb_init = temp_disturb_init + 1;
     end
@@ -239,35 +226,83 @@ t= t(1:temp_t);
 z = z(1:temp_t,:);
 
 
+% figure;
+% 
+% % Plot position
+% subplot(3, 1, 1);
+% plot(t, z(:, 1:3));
+% title('Position');
+% xlabel('Time (s)');
+% ylabel('Position (m)');
+% legend('x', 'y', 'z');
+% 
+% % Plot orientation
+% subplot(3, 1, 2);
+% plot(t, z(:, 4:6));
+% title('Orientation');
+% xlabel('Time (s)');
+% ylabel('Orientation (rad)');
+% legend('\phi', '\theta', '\psi');
+% 
+% % Plot control inputs
+% subplot(3, 1, 3);
+% u = zeros(length(t), 4);
+% for i = 1:length(t)
+%     u(i, :) = -K * (z(i, :)' - [uav_exitpoint; zeros(9, 1)]);
+% end
+% plot(t, u);
+% title('Control Inputs');
+% xlabel('Time (s)');
+% ylabel('Control Input');
+% legend('u1', 'u2', 'u3', 'u4');
+% Extract Quadrotor Position Data
+
+% Extract Quadrotor Position Data
+quadrotor_x = z_total(1, :);
+quadrotor_y = z_total(2, :);
+quadrotor_z = z_total(3, :);
+
+
+
+quadrotor_x_1 = z_total(4, :);
+quadrotor_y_1 = z_total(5, :);
+quadrotor_z_2 = z_total(6, :);
+
+% Extract UAV Position Data
+uav_x = new_uav_trajectory(:, 2);
+uav_y = new_uav_trajectory(:, 3);
+uav_z = new_uav_trajectory(:, 4);
+
+% Time vector (make sure this aligns with your data)
+t_quadrotor = linspace(0, total_sim_time, length(quadrotor_x)); % for quadrotor
+t_uav = new_uav_trajectory(:, 1); % assuming the first column is time
+
+% Plotting X Position
 figure;
-
-% Plot position
 subplot(3, 1, 1);
-plot(t, z(:, 1:3));
-title('Position');
+plot(t_quadrotor, quadrotor_x, 'b', t_uav, uav_x, 'r--');
+title('X Position of Quadrotor and UAV');
 xlabel('Time (s)');
-ylabel('Position (m)');
-legend('x', 'y', 'z');
+ylabel('X Position (m)');
+legend('Quadrotor', 'UAV');
 
-% Plot orientation
+% Plotting Y Position
 subplot(3, 1, 2);
-plot(t, z(:, 4:6));
-title('Orientation');
+plot(t_quadrotor, quadrotor_y, 'b', t_uav, uav_y, 'r--');
+title('Y Position of Quadrotor and UAV');
 xlabel('Time (s)');
-ylabel('Orientation (rad)');
-legend('\phi', '\theta', '\psi');
+ylabel('Y Position (m)');
+legend('Quadrotor', 'UAV');
 
-% Plot control inputs
+% Plotting Z Position
 subplot(3, 1, 3);
-u = zeros(length(t), 4);
-for i = 1:length(t)
-    u(i, :) = -K * (z(i, :)' - [uav_exitpoint; zeros(9, 1)]);
-end
-plot(t, u);
-title('Control Inputs');
+
+
+plot(t_quadrotor, quadrotor_z, 'b', t_uav, uav_z, 'r--');
+title('Z Position of Quadrotor and UAV');
 xlabel('Time (s)');
-ylabel('Control Input');
-legend('u1', 'u2', 'u3', 'u4');
+ylabel('Z Position (m)');
+legend('Quadrotor', 'UAV');
 
 
 %% Animation
@@ -289,7 +324,6 @@ end
 
 
 
-
 animation_fig = figure;
 
 airspace_box_length = 10;
@@ -303,19 +337,11 @@ animation_axes = axes('Parent', animation_fig, ...
     'TickLabelInterpreter', 'LaTeX', 'FontSize', 14);
 
 view(animation_axes, 3);
-frames = cell(1, length(t));
-
-% Set up VideoWriter
-video_filename = 'quadrotor_animation.mp4';
-videoObj = VideoWriter(video_filename, 'MPEG-4');
-videoObj.FrameRate = 10; % You can adjust the frame rate as needed
-open(videoObj);
-
 
 % Enable rotation
 rotate3d(animation_fig, 'on');
 % Initialize variables to store the history path
-uav_history_path = uav_entrypoint.';
+uav_history_path = zeros(1, 3);
 drone_history_path = zeros(1, 3);
 
 tic;
@@ -359,7 +385,7 @@ for k = 1:length(t)
         'ZData', [ctr([1 3], 3); NaN; ctr([2 4], 3)]);
     
     % Update history path variables
-    uav_history_path = [uav_history_path; uav_trajectory(k,2:4)];
+    uav_history_path = [uav_history_path; uav_position];
     drone_history_path = [drone_history_path; z(k, 1:3)];
     % Plot the UAV history path
     plot3(uav_history_path(:, 1), uav_history_path(:, 2), uav_history_path(:, 3), 'Color', 'b', 'LineWidth', 1);
@@ -404,37 +430,21 @@ for k = 1:length(t)
     distance_y = z(k, 2) - uav_position(2);
     distance_z = z(k, 3) - uav_position(3);
 
-    %distance_str = sprintf('Distance to UAV: %.2f (x), %.2f (y), %.2f (z)', distance_x, distance_y, distance_z);
-    %distance_text = text(-2, -2, 1, distance_str, 'FontSize', 12, 'Color', 'r');
+%     distance_str = sprintf('Distance to UAV: %.2f (x), %.2f (y), %.2f (z)', distance_x, distance_y, distance_z);
+%     distance_text = text(-2, -2, 1, distance_str, 'FontSize', 12, 'Color', 'r');
 
-    % if k < length(t) - 20
-    %     frames{k} = getframe(animation_fig);
-    % end
-    % Capture the frame
-    frames{k} = getframe(animation_fig);
-    
-    % Write the frame to the video
-    writeVideo(videoObj, frames{k});
 
     pause(t(k) - toc);
     pause(0.008);
-    
+
     
     if k< length(t)
         delete(drone_tip);
-        %delete(distance_text);
+        
         cla;
     end
 
 end
-
-% Close the VideoWriter object
-close(videoObj);
-
-% Close the figure
-close(animation_fig);
-
-
     
 
 
@@ -552,31 +562,10 @@ function z_new = update_states(z_prev, K, mu, p, I, r, n, uav_position, t_span)
 
 
 
-    dev_x = z_prev(1) - uav_position(1);
-    dev_y = z_prev(2) - uav_position(2);
-    dev_z = z_prev(3) - uav_position(3);
 
     % Adjusting thrust output based on feasible limits
-    u = max(min(-K * (z_prev - [uav_position'; zeros(9, 1)]),mu/2), 0.6125);
+    u = max(min(-K * (z_prev - [uav_position'; zeros(9, 1)]), mu), 0);
     %u = -K * (z_prev - [uav_position'; zeros(9, 1)]);
-
-    if dev_x > 3 || dev_y > 3|| dev_z > 3
-        u =  u/2;
-    end
-
-    if (distance_x <0.3) && (distance_y<0.3) && (distance_z<0.3)
-        catched_uav = true;
-        % Break the simulation loop
-    end
-
-    if (catched_uav == true || escaped_uav == true) && (d_nestx < 0.1 && d_nesty < 0.1 && d_nestz <0.1)
-        returned_home = true;
-        return;
-    end
-
-    if (abs(distance_x) > 10) || (abs(distance_y) >10) || (abs(distance_z) >10)
-        escaped_uav = true;
-    end 
 
     
     disp("Display of Shapes")
@@ -600,7 +589,21 @@ function z_new = update_states(z_prev, K, mu, p, I, r, n, uav_position, t_span)
 
     % Integrate using Euler's method
     z_new = z_prev + dz * (t_span(end) - t_span(1));
+    
+    if (distance_x <0.8) && (distance_y<0.8) && (distance_z<0.8)
+        catched_uav = true;
+        % Break the simulation loop
+        return;
+    end
 
+    if (catched_uav == true || escaped_uav == true) && (d_nestx < 0.1 && d_nesty < 0.1 && d_nestz <0.1)
+        returned_home = true;
+        return;
+    end
+
+    if (abs(distance_x) > 10) || (abs(distance_y) >10) || (abs(distance_z) >10)
+        escaped_uav = true;
+    end 
 end
 
 
